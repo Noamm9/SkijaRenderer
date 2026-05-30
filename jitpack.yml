@@ -1,0 +1,14 @@
+# JitPack build configuration for NVGRenderer (Minecraft 26.1).
+#
+# Minecraft 26.1 requires JDK 25, which JitPack does not preinstall, so it is
+# installed via SDKMAN.
+
+# Tests are skipped on JitPack: ResourceLoaderTest hits a live HTTP endpoint
+# and is not deterministic in a CI environment.
+jdk:
+  - openjdk17
+before_install:
+  - sdk install java 25.0.3-tem
+  - sdk default java 25.0.3-tem
+install:
+  - ./gradlew build publishToMavenLocal -x test --no-daemon

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "skijarenderer",
+  "version": "${version}",
+  "name": "SkijaRenderer",
+  "description": "Minecraft Fabric ${version} Skija rendering library",
+  "authors": [
+    "Noamm"
+  ],
+  "contact": {},
+  "license": "unlicense",
+  "icon": "assets/skijarenderer/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      {
+        "value": "com.github.noamm9.skijarenderer.SkijaRenderer",
+        "adapter": "kotlin"
+      }
+    ]
+  },
+  "mixins": [],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-language-kotlin": ">=${kotlin_loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
