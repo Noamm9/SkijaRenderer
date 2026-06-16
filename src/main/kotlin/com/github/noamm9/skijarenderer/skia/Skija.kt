@@ -13,9 +13,12 @@ import kotlin.math.round
 object Skija {
     private val imageCache = HashMap<SkijaImage, CachedImage>()
     private val typefaces = HashMap<SkijaFont, Typeface>()
+    private val fonts = HashMap<FontKey, Font>()
     private var canvas: Canvas? = null
     private var frameSaveCount = 0
     private var globalAlpha = 1f
+    private val batch = ArrayList<() -> Unit>()
+    private var consumed = false
 
     val defaultFont = SkijaFont("assets/skijarenderer/inter.ttf")
 
@@ -34,53 +37,41 @@ object Skija {
         globalAlpha = 1f
     }
 
-    fun push() {
-        currentCanvas().save()
-    }
+    fun push() = dispatch { currentCanvas().save() }
 
-    fun pop() {
-        currentCanvas().restore()
-    }
+    fun pop() = dispatch { currentCanvas().restore() }
 
-    fun scale(x: Number, y: Number) {
-        currentCanvas().scale(x.toFloat(), y.toFloat())
-    }
+    fun scale(x: Number, y: Number) = dispatch { currentCanvas().scale(x.toFloat(), y.toFloat()) }
 
     fun scale(n: Number) = scale(n, n)
 
-    fun translate(x: Number, y: Number) {
-        currentCanvas().translate(x.toFloat(), y.toFloat())
-    }
+    fun translate(x: Number, y: Number) = dispatch { currentCanvas().translate(x.toFloat(), y.toFloat()) }
 
-    fun rotate(radians: Number) {
+    fun rotate(radians: Number) = dispatch {
         currentCanvas().rotate(Math.toDegrees(radians.toDouble()).toFloat())
     }
 
-    fun transform(matrix: Matrix3x2fc) {
-        currentCanvas().concat(matrix.toSkijaMatrix())
-    }
+    fun transform(matrix: Matrix3x2fc) = dispatch { currentCanvas().concat(matrix.toSkijaMatrix()) }
 
-    fun globalAlpha(amount: Number) {
+    fun globalAlpha(amount: Number) = dispatch {
         globalAlpha = amount.toFloat().coerceIn(0f, 1f)
     }
 
-    fun pushScissor(x: Number, y: Number, w: Number, h: Number) {
+    fun pushScissor(x: Number, y: Number, w: Number, h: Number) = dispatch {
         currentCanvas().save()
         currentCanvas().clipRect(Rect.makeXYWH(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat()))
     }
 
-    fun popScissor() {
-        currentCanvas().restore()
-    }
+    fun popScissor() = dispatch { currentCanvas().restore() }
 
-    fun line(x1: Number, y1: Number, x2: Number, y2: Number, thickness: Number, color: Color) {
+    fun line(x1: Number, y1: Number, x2: Number, y2: Number, thickness: Number, color: Color) = dispatch {
         paint(color, PaintMode.STROKE).use {
             it.strokeWidth = thickness.toFloat()
             currentCanvas().drawLine(x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(), it)
         }
     }
 
-    fun drawHalfRoundedRect(x: Number, y: Number, w: Number, h: Number, color: Color, radius: Number, roundTop: Boolean) {
+    fun drawHalfRoundedRect(x: Number, y: Number, w: Number, h: Number, color: Color, radius: Number, roundTop: Boolean) = dispatch {
         val fx = x.toFloat()
         val fy = y.toFloat()
         val fw = w.toFloat()
@@ -98,19 +89,19 @@ object Skija {
         }
     }
 
-    fun rect(x: Number, y: Number, w: Number, h: Number, color: Color, radius: Number) {
+    fun rect(x: Number, y: Number, w: Number, h: Number, color: Color, radius: Number) = dispatch {
         paint(color).use {
             currentCanvas().drawRRect(RRect.makeXYWH(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat(), radius.toFloat()), it)
         }
     }
 
-    fun rect(x: Number, y: Number, w: Number, h: Number, color: Color) {
+    fun rect(x: Number, y: Number, w: Number, h: Number, color: Color) = dispatch {
         paint(color).use {
             currentCanvas().drawRect(Rect.makeXYWH(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat()), it)
         }
     }
 
-    fun hollowRect(x: Number, y: Number, w: Number, h: Number, thickness: Number, color: Color, radius: Number) {
+    fun hollowRect(x: Number, y: Number, w: Number, h: Number, thickness: Number, color: Color, radius: Number) = dispatch {
         paint(color, PaintMode.STROKE).use {
             it.strokeWidth = thickness.toFloat()
             currentCanvas().drawRRect(RRect.makeXYWH(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat(), radius.toFloat()), it)
@@ -126,14 +117,16 @@ object Skija {
         color2: Color,
         gradient: SkijaGradient,
         radius: Float
-    ) {
+    ) = dispatch {
         paint(Color.WHITE).use { fill ->
-            fill.shader = linearGradient(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat(), color1, color2, gradient)
-            currentCanvas().drawRRect(RRect.makeXYWH(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat(), radius), fill)
+            linearGradient(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat(), color1, color2, gradient).use { shader ->
+                fill.shader = shader
+                currentCanvas().drawRRect(RRect.makeXYWH(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat(), radius), fill)
+            }
         }
     }
 
-    fun dropShadow(x: Number, y: Number, width: Number, height: Number, blur: Number, spread: Number, radius: Number) {
+    fun dropShadow(x: Number, y: Number, width: Number, height: Number, blur: Number, spread: Number, radius: Number) = dispatch {
         val rect = Rect.makeXYWH(
             x.toFloat() - spread.toFloat(),
             y.toFloat() - spread.toFloat(),
@@ -143,13 +136,13 @@ object Skija {
         currentCanvas().drawRectShadow(rect, 0f, 0f, blur.toFloat(), radius.toFloat(), Color(0, 0, 0, 125).toSkijaColor())
     }
 
-    fun circle(x: Number, y: Number, radius: Number, color: Color) {
+    fun circle(x: Number, y: Number, radius: Number, color: Color) = dispatch {
         paint(color).use {
             currentCanvas().drawCircle(x.toFloat(), y.toFloat(), radius.toFloat(), it)
         }
     }
 
-    fun text(text: String, x: Number, y: Number, size: Number, color: Color, font: SkijaFont = defaultFont) {
+    fun text(text: String, x: Number, y: Number, size: Number, color: Color, font: SkijaFont = defaultFont) = dispatch {
         paint(color).use { fill ->
             val skijaFont = skijaFont(font, size.toFloat())
             currentCanvas().drawString(text, x.toFloat(), y.toFloat() - skijaFont.metrics.ascent, skijaFont, fill)
@@ -169,10 +162,14 @@ object Skija {
     ) {
         if (text.isEmpty()) return
 
-        paint(Color.WHITE).use { fill ->
-            fill.shader = linearGradient(x.toFloat(), y.toFloat(), width.toFloat(), size.toFloat(), color1, color2, direction)
-            val skijaFont = skijaFont(font, size.toFloat())
-            currentCanvas().drawString(text, x.toFloat(), y.toFloat() - skijaFont.metrics.ascent, skijaFont, fill)
+        dispatch {
+            paint(Color.WHITE).use { fill ->
+                linearGradient(x.toFloat(), y.toFloat(), width.toFloat(), size.toFloat(), color1, color2, direction).use { shader ->
+                    fill.shader = shader
+                    val skijaFont = skijaFont(font, size.toFloat())
+                    currentCanvas().drawString(text, x.toFloat(), y.toFloat() - skijaFont.metrics.ascent, skijaFont, fill)
+                }
+            }
         }
     }
 
@@ -185,16 +182,7 @@ object Skija {
         return skijaFont(font, size.toFloat()).measureTextWidth(text)
     }
 
-    fun drawWrappedString(
-        text: String,
-        x: Number,
-        y: Number,
-        w: Number,
-        size: Number,
-        color: Color,
-        font: SkijaFont = defaultFont,
-        lineHeight: Number = 1f
-    ) {
+    fun drawWrappedString(text: String, x: Number, y: Number, w: Number, size: Number, color: Color, font: SkijaFont = defaultFont, lineHeight: Number = 1f) {
         var cursorY = y.toFloat()
         val spacing = size.toFloat() * lineHeight.toFloat()
         wrap(text, w.toFloat(), size.toFloat(), font).forEach { line ->
@@ -219,7 +207,7 @@ object Skija {
         imageCache.remove(image)
     }
 
-    fun image(image: SkijaImage, x: Number, y: Number, w: Number, h: Number, radius: Number) {
+    fun image(image: SkijaImage, x: Number, y: Number, w: Number, h: Number, radius: Number) = dispatch {
         val rect = Rect.makeXYWH(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat())
         currentCanvas().save()
         currentCanvas().clipRRect(RRect.makeXYWH(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat(), radius.toFloat()))
@@ -232,7 +220,7 @@ object Skija {
         image(existing ?: createImage(path), x, y, w, h, radius)
     }
 
-    fun image(image: SkijaImage, x: Number, y: Number, w: Number, h: Number) {
+    fun image(image: SkijaImage, x: Number, y: Number, w: Number, h: Number) = dispatch {
         currentCanvas().drawImageRect(getImage(image), Rect.makeXYWH(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat()))
     }
 
@@ -264,14 +252,26 @@ object Skija {
         return lines
     }
 
+    internal fun hasBatch(): Boolean = batch.isNotEmpty()
+    internal fun flush() {
+        for (op in batch) op()
+        batch.clear()
+    }
+
+    private fun dispatch(op: () -> Unit) {
+        batch.add(op)
+    }
+
     private fun currentCanvas(): Canvas {
         return canvas ?: throw IllegalStateException("Skija frame has not started")
     }
 
     private fun skijaFont(font: SkijaFont, size: Float): Font {
-        return Font(typefaces.getOrPut(font) {
-            Typeface.makeFromData(Data.makeFromBytes(font.bytes))
-        }, size).setEdging(FontEdging.SUBPIXEL_ANTI_ALIAS)
+        return fonts.getOrPut(FontKey(font, size)) {
+            Font(typefaces.getOrPut(font) {
+                Typeface.makeFromData(Data.makeFromBytes(font.bytes))
+            }, size).setEdging(FontEdging.SUBPIXEL_ANTI_ALIAS)
+        }
     }
 
     private fun getImage(image: SkijaImage): Image {
@@ -300,21 +300,10 @@ object Skija {
     }
 
     private fun paint(color: Color, mode: PaintMode = PaintMode.FILL): Paint {
-        return Paint().setAntiAlias(true)
-            .setMode(mode)
-            .setColor(color.toSkijaColor())
-            .setAlphaf((color.alpha / 255f) * globalAlpha)
+        return Paint().setAntiAlias(true).setMode(mode).setColor(color.toSkijaColor()).setAlphaf((color.alpha / 255f) * globalAlpha)
     }
 
-    private fun linearGradient(
-        x: Float,
-        y: Float,
-        w: Float,
-        h: Float,
-        color1: Color,
-        color2: Color,
-        direction: SkijaGradient
-    ): Shader {
+    private fun linearGradient(x: Float, y: Float, w: Float, h: Float, color1: Color, color2: Color, direction: SkijaGradient): Shader {
         val colors = intArrayOf(color1.toSkijaColor(), color2.toSkijaColor())
         return when (direction) {
             SkijaGradient.LEFT_RIGHT -> Shader.makeLinearGradient(x, y, x + w, y, colors)
@@ -338,4 +327,5 @@ object Skija {
     }
 
     private data class CachedImage(var count: Int, val image: Image)
+    private data class FontKey(val font: SkijaFont, val size: Float)
 }
